@@ -87,6 +87,7 @@
   .fin-actions{display:flex;flex-direction:column;gap:10px;margin-top:20px}
   .fin-actions button{padding:15px;border:none;border-radius:14px;font-size:15px;font-weight:800;cursor:pointer}
   .b-tg{background:#229ED9;color:#fff}.b-copy{background:var(--bg);color:var(--ink)}
+  .finwarn{background:#FFEBE9;color:#C41E12;border:1.5px solid #FFBDB6;border-radius:14px;padding:12px 14px;font-size:13.5px;font-weight:600;line-height:1.45;margin-top:16px}
 </style>
 </head>
 <body>
@@ -114,10 +115,18 @@ const ANNA_TG   = "aglnetreba";    // Telegram Анны для запасной 
 const KEY = "anna_anketa_v1";
 
 let A = load();                    // ответы {qid:...}
+if(!A.__sid){A.__sid='a'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);}  // id сессии — одна вкладка на человека
 let step = A.__step || 0;          // 0=приветствие, 1..11=блоки, 12=финиш
 const MAX = SCHEMA.length + 1;     // 12
 
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return {}}}
+/* фоновая отправка черновика в таблицу — upsert по __sid (best-effort) */
+function pushSheet(){
+  if(!SHEET_URL)return;
+  const {headers,cols}=buildRows();
+  const body=JSON.stringify({sid:A.__sid,name:A.__name||'',headers,cols});
+  try{fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body}).catch(()=>{})}catch(e){}
+}
 function save(){A.__step=step;localStorage.setItem(KEY,JSON.stringify(A));flashSaved()}
 let sT;function flashSaved(){const s=document.getElementById('saved');s.classList.add('show');clearTimeout(sT);sT=setTimeout(()=>s.classList.remove('show'),1100)}
 
@@ -216,7 +225,7 @@ function findItem(id){for(const s of SCHEMA)for(const it of s.items)if(it.id===i
 
 function next(){
   if(step===0){const n=(A.__name||'').trim();if(!n){alert('Пожалуйста, укажите имя');return}}
-  if(step<MAX){step++;save();render();}
+  if(step<MAX){step++;save();render();if(step>=1)pushSheet();}
 }
 function prev(){if(step>0){step--;save();render();}}
 
@@ -250,9 +259,10 @@ function renderFinish(el){
   el.innerHTML=`<div class="center">
     <div class="big">✅</div>
     <h2>Анкета заполнена</h2>
-    <p>Отвечено на ${done} из ${TOTAL} вопросов.${done<TOTAL?' Можно вернуться и дополнить пропущенное — кнопка «Назад».':''}</p>
+    <p>Отвечено на ${done} из ${TOTAL} вопросов.</p>
     <p style="margin-top:12px">Нажмите «Отправить» — Ваши ответы придут мне. Спасибо за подробность, это правда важно для точных рекомендаций.</p>
   </div>
+  ${done<TOTAL?`<div class="finwarn">⚠️ Заполнено ${done} из ${TOTAL}. Незаполненное можно дополнить кнопкой «Назад» — Ваши ответы уже сохранены и по ходу уходят мне. Но для точных рекомендаций лучше ответить на всё.</div>`:''}
   <div class="fin-actions">
     <button class="next" style="color:#fff" onclick="submitAll()">📨 Отправить ответы</button>
     <button class="b-tg" onclick="sendTG()">Отправить через Telegram</button>
@@ -260,10 +270,8 @@ function renderFinish(el){
   </div>`;
 }
 function submitAll(){
-  const {headers,cols}=buildRows();
-  /* фон: пишем в таблицу (best-effort, без гарантии) */
-  if(SHEET_URL){try{fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},
-    body:JSON.stringify({headers,cols})}).catch(()=>{})}catch(e){}}
+  /* фон: пишем в таблицу (best-effort, upsert по __sid) */
+  pushSheet();
   /* надёжный путь: вертикальный текст вопрос+ответ → буфер → чат Анны */
   const t=buildText();
   copyRaw(t,()=>{
