@@ -132,7 +132,7 @@ function updateProgress(){
 
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
-function render(){
+function render(keepScroll){
   const el=document.getElementById('screen');
   if(step===0){renderWelcome(el);}
   else if(step<=SCHEMA.length){renderBlock(el,SCHEMA[step-1]);}
@@ -143,7 +143,7 @@ function render(){
   else if(step===SCHEMA.length){nx.textContent='Завершить →';}
   else if(step>SCHEMA.length){nx.style.display='none';back.style.flex='1';}
   else{nx.textContent='Далее →';nx.style.display='block';back.style.flex='0 0 46%';}
-  updateProgress();window.scrollTo(0,0);
+  updateProgress();if(!keepScroll)window.scrollTo(0,0);
 }
 
 function renderWelcome(el){
@@ -179,12 +179,12 @@ function renderItem(it){
     return q+`<textarea class="f" oninput="setV('${it.id}',this.value)">${esc(v||'')}</textarea>`;
   }
   if(it.type==='scale012'){
-    const cur=v;const b=n=>`<button class="v${n} ${String(cur)===String(n)?'sel':''}" onclick="setV('${it.id}',${n});render()">${n}</button>`;
+    const cur=v;const b=n=>`<button class="v${n} ${String(cur)===String(n)?'sel':''}" onclick="setV('${it.id}',${n});render(true)">${n}</button>`;
     return q+`<div class="s012">${b(0)}${b(1)}${b(2)}</div>
       <div class="s012lab"><span>нет</span><span>иногда</span><span>часто</span></div>`;
   }
   if(it.type==='scale10'){
-    let b='';for(let n=1;n<=10;n++)b+=`<button class="${String(v)===String(n)?'sel':''}" onclick="setV('${it.id}',${n});render()">${n}</button>`;
+    let b='';for(let n=1;n<=10;n++)b+=`<button class="${String(v)===String(n)?'sel':''}" onclick="setV('${it.id}',${n});render(true)">${n}</button>`;
     return q+`<div class="s10">${b}</div><div class="s012lab"><span>1 — пока нет</span><span>10 — полностью готова</span></div>`;
   }
   if(it.type==='single'||it.type==='multi'){
@@ -210,7 +210,7 @@ function pick(id,idx,multi){
   const it=findItem(id);const o=it.options[idx];
   if(multi){let arr=Array.isArray(A[id])?A[id].slice():[];const p=arr.indexOf(o);if(p>=0)arr.splice(p,1);else arr.push(o);A[id]=arr;}
   else{A[id]=(A[id]===o)?'':o;}
-  save();render();
+  save();render(true);
 }
 function findItem(id){for(const s of SCHEMA)for(const it of s.items)if(it.id===id)return it;return null}
 
@@ -261,11 +261,15 @@ function renderFinish(el){
 }
 function submitAll(){
   const {headers,cols}=buildRows();
-  if(SHEET_URL){
-    fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({headers,cols})}).catch(()=>{});
-    alert('Спасибо! Ответы отправлены.');
-  }else{sendTG();}
+  /* фон: пишем в таблицу (best-effort, без гарантии) */
+  if(SHEET_URL){try{fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},
+    body:JSON.stringify({headers,cols})}).catch(()=>{})}catch(e){}}
+  /* надёжный путь: вертикальный текст вопрос+ответ → буфер → чат Анны */
+  const t=buildText();
+  copyRaw(t,()=>{
+    alert('Ваши ответы скопированы. Сейчас откроется чат с Анной — вставьте их одним сообщением (долгое нажатие → «Вставить») и отправьте.');
+    if(ANNA_TG)window.open('https://t.me/'+ANNA_TG,'_blank');
+  });
 }
 function sendTG(){
   const t=buildText();
